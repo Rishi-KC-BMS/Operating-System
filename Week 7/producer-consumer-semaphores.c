@@ -1,71 +1,72 @@
 #include <stdio.h>
-#include <pthread.h>
 #include <semaphore.h>
-#include <unistd.h>
 
-#define BUFFER_SIZE 5
+#define SIZE 5
 
-int buffer[BUFFER_SIZE];
+int buffer[SIZE];
 int in = 0, out = 0;
 
-sem_t empty, full;
-pthread_mutex_t mutex;
+sem_t empty, full, mutex;
 
-void* producer(void* arg) {
-    int item;
-    for(int i = 0; i < 10; i++) {
-        item = i;
+void produce() {
+    static int item = 1;
 
-        sem_wait(&empty);
-        pthread_mutex_lock(&mutex);
+    if(sem_trywait(&empty) == 0) {
+        sem_wait(&mutex);
 
         buffer[in] = item;
-        printf("Produced: %d\n", item);
-        in = (in + 1) % BUFFER_SIZE;
+        printf("Producer has produced: Item %d\n", item);
+        in = (in + 1) % SIZE;
+        item++;
 
-        pthread_mutex_unlock(&mutex);
+        sem_post(&mutex);
         sem_post(&full);
-
-        sleep(1);
+    } else {
+        printf("Buffer is full!\n");
     }
-    return NULL;
 }
 
-void* consumer(void* arg) {
-    int item;
-    for(int i = 0; i < 10; i++) {
+void consume() {
+    if(sem_trywait(&full) == 0) {
+        sem_wait(&mutex);
 
-        sem_wait(&full);
-        pthread_mutex_lock(&mutex);
+        int item = buffer[out];
+        printf("Consumer has consumed: Item %d\n", item);
+        out = (out + 1) % SIZE;
 
-        item = buffer[out];
-        printf("Consumed: %d\n", item);
-        out = (out + 1) % BUFFER_SIZE;
-
-        pthread_mutex_unlock(&mutex);
+        sem_post(&mutex);
         sem_post(&empty);
-
-        sleep(2);
+    } else {
+        printf("Buffer is empty!\n");
     }
-    return NULL;
 }
 
 int main() {
-    pthread_t p, c;
+    int choice;
 
-    sem_init(&empty, 0, BUFFER_SIZE);
+    sem_init(&empty, 0, SIZE);
     sem_init(&full, 0, 0);
-    pthread_mutex_init(&mutex, NULL);
+    sem_init(&mutex, 0, 1);
 
-    pthread_create(&p, NULL, producer, NULL);
-    pthread_create(&c, NULL, consumer, NULL);
+    while(1) {
+        printf("\nEnter 1.Producer 2.Consumer 3.Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
 
-    pthread_join(p, NULL);
-    pthread_join(c, NULL);
+        switch(choice) {
+            case 1:
+                produce();
+                break;
 
-    sem_destroy(&empty);
-    sem_destroy(&full);
-    pthread_mutex_destroy(&mutex);
+            case 2:
+                consume();
+                break;
 
-    return 0;
+            case 3:
+                return 0;
+
+            default:
+                printf("Invalid choice!\n");
+        }
+    }
 }
