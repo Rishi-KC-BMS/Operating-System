@@ -1,51 +1,105 @@
 #include <stdio.h>
-#include <pthread.h>
+#include <stdlib.h>
+#include <unistd.h>   // for sleep()
 #include <semaphore.h>
-#include <unistd.h>
+#include <windows.h>  // Required for semaphore simulation on Windows
 
-#define N 5
+#define MAX 5
 
-sem_t forks[N];
-sem_t room;  // allows only 4 philosophers
+int hungry[MAX];        // Stores positions of hungry philosophers
+int eaten[MAX] = {0};   // Tracks whether each philosopher has eaten
+int hungry_count = 0;   // Total number of hungry philosophers
 
-void* philosopher(void* num) {
-    int id = *(int*)num;
+sem_t mutex;  // Semaphore to control eating access
 
-    while(1) {
-        printf("Philosopher %d is thinking\n", id);
-        sleep(1);
+// Wrapper for semaphore wait
+void wait_(sem_t* s) {
+    sem_wait(s);
+}
 
-        sem_wait(&room);
+// Wrapper for semaphore signal
+void signal_(sem_t* s) {
+    sem_post(s);
+}
 
-        sem_wait(&forks[id]);
-        sem_wait(&forks[(id + 1) % N]);
-
-        printf("Philosopher %d is eating\n", id);
-        sleep(2);
-
-        sem_post(&forks[id]);
-        sem_post(&forks[(id + 1) % N]);
-
-        sem_post(&room);
+// Prints the list of waiting (hungry) philosophers
+void print_waiting() {
+    for (int i = 0; i < hungry_count; i++) {
+        printf("P %d is waiting\n", hungry[i]);
     }
 }
 
-int main() {
-    pthread_t ph[N];
-    int ids[N];
+// Simulates the eating process based on allowed simultaneous eaters
+void simulate_eating(int eat_limit) {
+    int finished = 0;
 
-    sem_init(&room, 0, N - 1);
+    // Initialize semaphore with eat_limit (1 or 2)
+    sem_init(&mutex, 0, eat_limit);
 
-    for(int i = 0; i < N; i++)
-        sem_init(&forks[i], 0, 1);
+    // Loop until all hungry philosophers have eaten
+    while (finished < hungry_count) {
+        print_waiting();  // Show all waiting philosophers
 
-    for(int i = 0; i < N; i++) {
-        ids[i] = i;
-        pthread_create(&ph[i], NULL, philosopher, &ids[i]);
+        int served = 0;
+        for (int i = 0; i < hungry_count && served < eat_limit; i++) {
+            if (!eaten[i]) {  // If philosopher hasn't eaten yet
+                wait_(&mutex);  // Acquire access
+                printf("P %d is granted to eat\n", hungry[i]);
+
+                sleep(1);  // Simulate eating time
+
+                printf("P %d has finished eating\n", hungry[i]);
+                signal_(&mutex);  // Release access
+
+                eaten[i] = 1;  // Mark as eaten
+                served++;
+                finished++;
+            }
+        }
     }
 
-    for(int i = 0; i < N; i++)
-        pthread_join(ph[i], NULL);
+    sem_destroy(&mutex);  // Clean up semaphore
+}
+
+int main() {
+    int total_philosophers;
+    int choice;
+
+    // Input total philosophers and how many are hungry
+    printf("Enter the total number of philosophers: ");
+    scanf("%d", &total_philosophers);
+
+    printf("How many are hungry: ");
+    scanf("%d", &hungry_count);
+
+    // Input positions of hungry philosophers
+    for (int i = 0; i < hungry_count; i++) {
+        printf("Enter philosopher %d position (1 to %d): ", i + 1, total_philosophers);
+        scanf("%d", &hungry[i]);
+    }
+
+    // Menu loop for choosing eating policy
+    do {
+        printf("\n1. One can eat at a time\n");
+        printf("2. Two can eat at a time\n");
+        printf("3. Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+
+        // Reset eaten status before each run
+        for (int i = 0; i < hungry_count; i++) {
+            eaten[i] = 0;
+        }
+
+        if (choice == 1) {
+            printf("Allow one philosopher to eat at any time\n");
+            simulate_eating(1);  // One can eat
+        } else if (choice == 2) {
+            printf("Allow two philosophers to eat at any time\n");
+            simulate_eating(2);  // Two can eat
+        }
+
+    } while (choice != 3);  // Exit on choice 3
 
     return 0;
 }
